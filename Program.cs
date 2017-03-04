@@ -17,9 +17,9 @@ namespace UsbTest
         static void Main(string[] args)
         {
             int result = -1;
-//#if DEBUG
+#if DEBUG
             Debug.Listeners.Add(new TextWriterTraceListener(System.Console.Error));
-//#endif
+#endif
             using (var nes = new ClovershellConnection())
             {
                 try
@@ -113,7 +113,7 @@ namespace UsbTest
 
         static void ShowHelp()
         {
-            Console.WriteLine("clovershell client (c) cluster, 2017");
+            Console.WriteLine("clovershell client v{0} (c) cluster, 2017", Assembly.GetExecutingAssembly().GetName().Version);
             Console.WriteLine("Usage: {0} shell\r\nUsage: {0} exec <command> [stdin [stdout [stderr]]]", Path.GetFileName(Assembly.GetExecutingAssembly().CodeBase));
         }
     }

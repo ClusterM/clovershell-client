@@ -272,13 +272,21 @@ namespace com.clusterrr.cloverhack
                             var body = new byte[65536];
                             int len;
                             while (epReader.Read(body, 50, out len) == ErrorCode.Ok) ;
+                            epReader.ReadBufferSize = 65536;
+                            epReader.DataReceived += epReader_DataReceived;
+                            epReader.DataReceivedEnabled = true;
                             online = true;
                             while (device.mUsbRegistry.IsAlive)
                             {
+                                Thread.Sleep(100);
+                                /*
+                                Debug.WriteLine(string.Format("{0} {1}", 0, DateTime.Now.Ticks / 10000));
                                 int recv = 0;
                                 while (recv < header.Length)
                                 {
-                                    var res = epReader.Read(header, recv, header.Length - recv, 1000, out len);
+                                    Debug.WriteLine(string.Format("{0} {1}", 1, DateTime.Now.Ticks / 10000));
+                                    var res = epReader.Read(header, recv, header.Length - recv, 50, out len);
+                                    Debug.WriteLine(string.Format("{0} {1}", 2, DateTime.Now.Ticks / 10000));
                                     if (res == ErrorCode.Ok)
                                         recv += len;
                                     else
@@ -293,16 +301,22 @@ namespace com.clusterrr.cloverhack
                                 var arg = header[1];
                                 var bodyLen = header[2] + header[3] * 0x100;
                                 recv = 0;
+                                Debug.WriteLine(string.Format("{0} {1}", 3, DateTime.Now.Ticks / 10000));
                                 while (recv < bodyLen)
                                 {
-                                    var res = epReader.Read(body, recv, bodyLen - recv, 1000, out len);
+                                    Debug.WriteLine(string.Format("{0} {1}", 4, DateTime.Now.Ticks / 10000));
+                                    var res = epReader.Read(body, recv, bodyLen - recv, 50, out len);
+                                    Debug.WriteLine(string.Format("{0} {1}", 5, DateTime.Now.Ticks / 10000));
                                     if (res == ErrorCode.Ok)
                                         recv += len;
                                     else
                                         throw new Exception(string.Format("USB read error ({0}/{1}, cmd: {2}, arg: {3}): {4}", recv, bodyLen, cmd, arg, res.ToString()));
                                 }
+                                Debug.WriteLine(string.Format("{0} {1}", 6, DateTime.Now.Ticks / 10000));
                                 if (recv < bodyLen) continue;
                                 proceedPacket(cmd, arg, body, bodyLen);
+                                Debug.WriteLine(string.Format("{0} {1}", 7, DateTime.Now.Ticks / 10000));
+                                 * */
                             }
                             break;
                         }
@@ -341,7 +355,15 @@ namespace com.clusterrr.cloverhack
             }
         }
 
-        void proceedPacket(ClovershellCommand cmd, byte arg, byte[] data, int len = -1)
+        void epReader_DataReceived(object sender, EndpointDataEventArgs e)
+        {
+            var cmd = (ClovershellCommand)e.Buffer[0];
+            var arg = e.Buffer[1];
+            var len = e.Buffer[2] | (e.Buffer[3] * 0x100);
+            proceedPacket(cmd, arg, e.Buffer, 4, len);
+        }
+
+        void proceedPacket(ClovershellCommand cmd, byte arg, byte[] data, int pos, int len)
         {
             if (len < 0)
                 len = data.Length;
@@ -352,28 +374,28 @@ namespace com.clusterrr.cloverhack
             {
                 case ClovershellCommand.CMD_PONG:
                     lastPingResponse = new byte[len];
-                    Array.Copy(data, 0, lastPingResponse, 0, len);
+                    Array.Copy(data, pos, lastPingResponse, 0, len);
                     break;
                 case ClovershellCommand.CMD_SHELL_NEW_RESP:
                     acceptShellConnection(arg);
                     break;
                 case ClovershellCommand.CMD_SHELL_OUT:
-                    shellOut(arg, data, len);
+                    shellOut(arg, data, pos, len);
                     break;
                 case ClovershellCommand.CMD_SHELL_CLOSED:
                     shellClosed(arg);
                     break;
                 case ClovershellCommand.CMD_EXEC_NEW_RESP:
-                    newExecConnection(arg, Encoding.UTF8.GetString(data, 0, len));
+                    newExecConnection(arg, Encoding.UTF8.GetString(data, pos, len));
                     break;
                 case ClovershellCommand.CMD_EXEC_STDOUT:
-                    execOut(arg, data, len);
+                    execOut(arg, data, pos, len);
                     break;
                 case ClovershellCommand.CMD_EXEC_STDERR:
-                    execErr(arg, data, len);
+                    execErr(arg, data, pos, len);
                     break;
                 case ClovershellCommand.CMD_EXEC_RESULT:
-                    execResult(arg, data);
+                    execResult(arg, data, pos, len);
                     break;
             }
         }
@@ -494,7 +516,7 @@ namespace com.clusterrr.cloverhack
                 {
                     if (connection.stdin.CanSeek)
                         connection.stdin.Seek(0, SeekOrigin.Begin);
-                    var buffer = new byte[8*1024];
+                    var buffer = new byte[8 * 1024];
                     int l;
                     do
                     {
@@ -511,31 +533,31 @@ namespace com.clusterrr.cloverhack
             }
         }
 
-        void execOut(byte arg, byte[] data, int len)
+        void execOut(byte arg, byte[] data, int pos, int len)
         {
             var c = execConnections[arg];
             if (c == null) return;
             if (c.stdout != null)
-                c.stdout.Write(data, 0, len);
+                c.stdout.Write(data, pos, len);
             if (len == 0)
                 c.stdoutFinished = true;
         }
 
-        void execErr(byte arg, byte[] data, int len)
+        void execErr(byte arg, byte[] data, int pos, int len)
         {
             var c = execConnections[arg];
             if (c == null) return;
             if (c.stderr != null)
-                c.stderr.Write(data, 0, len);
+                c.stderr.Write(data, pos, len);
             if (len == 0)
                 c.stderrFinished = true;
         }
 
-        void execResult(byte arg, byte[] data)
+        void execResult(byte arg, byte[] data, int pos, int len)
         {
             var c = execConnections[arg];
             if (c == null) return;
-            c.result = data[0];
+            c.result = data[pos];
             c.finished = true;
         }
 
@@ -565,12 +587,12 @@ namespace com.clusterrr.cloverhack
             shellConnecionThreads.Remove(Thread.CurrentThread);
         }
 
-        void shellOut(byte id, byte[] data, int len)
+        void shellOut(byte id, byte[] data, int pos, int len)
         {
             try
             {
                 if (shellConnections[id] == null) return;
-                shellConnections[id].socket.Send(data, 0, len, SocketFlags.None);
+                shellConnections[id].socket.Send(data, pos, len, SocketFlags.None);
             }
             catch (Exception ex)
             {
