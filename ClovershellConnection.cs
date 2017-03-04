@@ -64,6 +64,7 @@ namespace com.clusterrr.cloverhack
         bool enabled = false;
         bool autoreconnect = false;
         byte[] lastPingResponse = null;
+        DateTime lastAliveTime;
 
         public bool Enabled
         {
@@ -96,7 +97,7 @@ namespace com.clusterrr.cloverhack
             }
         }
 
-        public bool Autoreconnect
+        public bool AutoReconnect
         {
             get { return autoreconnect; }
             set { autoreconnect = value; }
@@ -124,8 +125,11 @@ namespace com.clusterrr.cloverhack
                 if (shellEnabled == value) return;
                 if (value)
                 {
+                    var server = new TcpListener(IPAddress.Any, shellPort);
+                    Debug.WriteLine(string.Format("Listening port {0}", shellPort));
+                    server.Start();
                     shellThread = new Thread(shellThreadLoop);
-                    shellThread.Start();
+                    shellThread.Start(server);
                 }
                 else
                 {
@@ -195,9 +199,7 @@ namespace com.clusterrr.cloverhack
                 while (enabled)
                 {
                     online = false;
-#if DEBUG
                     Debug.WriteLine("Waiting for clovershell");
-#endif
                     while (enabled)
                     {
                         try
@@ -213,7 +215,7 @@ namespace com.clusterrr.cloverhack
                                 }
                             }
                             //device = USBDevice.GetSingleDevice(vid, pid);
-                            if (device == null) continue;
+                            if (device == null) break;
                             IUsbDevice wholeUsbDevice = device as IUsbDevice;
                             if (!ReferenceEquals(wholeUsbDevice, null))
                             {
@@ -240,35 +242,24 @@ namespace com.clusterrr.cloverhack
                                         {
                                             inEndp = endp.Descriptor.EndpointID;
                                             inMax = endp.Descriptor.MaxPacketSize;
-#if DEBUG
                                             Debug.WriteLine("IN endpoint found: " + inEndp);
                                             Debug.WriteLine("IN endpoint maxsize: " + inMax);
-#endif
                                         }
                                         else
                                         {
                                             outEndp = endp.Descriptor.EndpointID;
                                             outMax = endp.Descriptor.MaxPacketSize;
-#if DEBUG
                                             Debug.WriteLine("OUT endpoint found: " + outEndp);
                                             Debug.WriteLine("OUT endpoint maxsize: " + outMax);
-#endif
                                         }
                                     }
                             if (inEndp != 0x81 || inMax != 512 || outEndp != 0x01 || outMax != 512)
-                            {
-                                device.Close();
-                                device = null;
-                                continue;
-                            }
+                                break;
                             epReader = device.OpenEndpointReader((ReadEndpointID)inEndp, 65536);
                             epWriter = device.OpenEndpointWriter((WriteEndpointID)outEndp);
-                            killAll();
-
-#if DEBUG
                             Debug.WriteLine("clovershell connected");
-#endif
-                            var header = new byte[4];
+                            // Kill all other serrions and drop all output
+                            killAll();
                             var body = new byte[65536];
                             int len;
                             while (epReader.Read(body, 50, out len) == ErrorCode.Ok) ;
@@ -276,47 +267,10 @@ namespace com.clusterrr.cloverhack
                             epReader.DataReceived += epReader_DataReceived;
                             epReader.DataReceivedEnabled = true;
                             online = true;
+                            lastAliveTime = DateTime.Now;
                             while (device.mUsbRegistry.IsAlive)
                             {
                                 Thread.Sleep(100);
-                                /*
-                                Debug.WriteLine(string.Format("{0} {1}", 0, DateTime.Now.Ticks / 10000));
-                                int recv = 0;
-                                while (recv < header.Length)
-                                {
-                                    Debug.WriteLine(string.Format("{0} {1}", 1, DateTime.Now.Ticks / 10000));
-                                    var res = epReader.Read(header, recv, header.Length - recv, 50, out len);
-                                    Debug.WriteLine(string.Format("{0} {1}", 2, DateTime.Now.Ticks / 10000));
-                                    if (res == ErrorCode.Ok)
-                                        recv += len;
-                                    else
-                                    {
-                                        if (recv > 0 || res != ErrorCode.IoTimedOut)
-                                            throw new Exception("USB read error: " + res.ToString());
-                                        break;
-                                    }
-                                }
-                                if (recv < header.Length) continue;
-                                var cmd = (ClovershellCommand)header[0];
-                                var arg = header[1];
-                                var bodyLen = header[2] + header[3] * 0x100;
-                                recv = 0;
-                                Debug.WriteLine(string.Format("{0} {1}", 3, DateTime.Now.Ticks / 10000));
-                                while (recv < bodyLen)
-                                {
-                                    Debug.WriteLine(string.Format("{0} {1}", 4, DateTime.Now.Ticks / 10000));
-                                    var res = epReader.Read(body, recv, bodyLen - recv, 50, out len);
-                                    Debug.WriteLine(string.Format("{0} {1}", 5, DateTime.Now.Ticks / 10000));
-                                    if (res == ErrorCode.Ok)
-                                        recv += len;
-                                    else
-                                        throw new Exception(string.Format("USB read error ({0}/{1}, cmd: {2}, arg: {3}): {4}", recv, bodyLen, cmd, arg, res.ToString()));
-                                }
-                                Debug.WriteLine(string.Format("{0} {1}", 6, DateTime.Now.Ticks / 10000));
-                                if (recv < bodyLen) continue;
-                                proceedPacket(cmd, arg, body, bodyLen);
-                                Debug.WriteLine(string.Format("{0} {1}", 7, DateTime.Now.Ticks / 10000));
-                                 * */
                             }
                             break;
                         }
@@ -351,7 +305,7 @@ namespace com.clusterrr.cloverhack
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("Critical error: " + ex.Message);
+                Debug.WriteLine("Critical error: " + ex.Message + ex.StackTrace);
             }
         }
 
@@ -367,9 +321,8 @@ namespace com.clusterrr.cloverhack
         {
             if (len < 0)
                 len = data.Length;
-#if DEBUG
             Debug.WriteLine(string.Format("cmd={0}, arg={1:X2}, len={2}", cmd, arg, len));
-#endif
+            lastAliveTime = DateTime.Now;
             switch (cmd)
             {
                 case ClovershellCommand.CMD_PONG:
@@ -437,13 +390,11 @@ namespace com.clusterrr.cloverhack
                 throw new Exception("write error");
         }
 
-        void shellThreadLoop()
+        void shellThreadLoop(object o)
         {
             try
             {
-                var server = new TcpListener(IPAddress.Any, shellPort);
-                Debug.WriteLine(string.Format("Listening port {0}", shellPort));
-                server.Start();
+                var server = o as TcpListener;
                 while (true)
                 {
                     var connection = new ShellConnection();
@@ -483,6 +434,7 @@ namespace com.clusterrr.cloverhack
             {
                 Debug.WriteLine(ex.Message);
             }
+            shellEnabled = false;
         }
 
         void acceptShellConnection(byte arg)
@@ -613,6 +565,10 @@ namespace com.clusterrr.cloverhack
             ShellEnabled = false;
         }
 
+        public TimeSpan IdleTime
+        {
+            get { return DateTime.Now - lastAliveTime; }
+        }
         public int Ping()
         {
             var rnd = new Random();
@@ -631,7 +587,7 @@ namespace com.clusterrr.cloverhack
             return (int)(DateTime.Now - start).TotalMilliseconds;
         }
 
-        public int Execute(string command, Stream stdin, Stream stdout, Stream stderr)
+        public int Execute(string command, Stream stdin, Stream stdout, Stream stderr, int timeout = 0)
         {
             var c = new ExecConnection(command, stdin, stdout, stderr);
             pendingExecConnections.Add(c);
@@ -639,7 +595,10 @@ namespace com.clusterrr.cloverhack
             while (!c.finished || !c.stdoutFinished || !c.stderrFinished)
             {
                 Thread.Sleep(50);
-                if (!Online) throw new Exception("device goes offline");
+                if (!Online)
+                    throw new Exception("device goes offline");
+                if (timeout > 0 && IdleTime.TotalMilliseconds > timeout)
+                    throw new Exception("clovershell read timeout");
             }
             execConnections[c.id] = null;
             return c.result;

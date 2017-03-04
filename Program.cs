@@ -16,6 +16,8 @@ namespace UsbTest
     {
         static void Main(string[] args)
         {
+            string source;
+            string target;
             int result = -1;
 #if DEBUG
             Debug.Listeners.Add(new TextWriterTraceListener(System.Console.Error));
@@ -36,15 +38,17 @@ namespace UsbTest
                     {
                         Thread.Sleep(10);
                         t--;
-                        if (t == 0) throw new Exception("no clovershell connection");
+                        if (t == 0) throw new Exception("no clovershell connection, make sure your NES Mini connected, turned on and clovershell mod installed");
                     }
                     var ping = nes.Ping();
-                    if (ping < 0) throw new Exception("connected to NES mini but clovershell is not responding");
+                    if (ping < 0) throw new Exception("connected to NES Mini but clovershell is not responding");
                     switch (command)
                     {
                         case "shell":
+                            if (args.Length >= 2)
+                                nes.ShellPort = ushort.Parse(args[1]);
                             nes.ShellEnabled = true;
-                            nes.Autoreconnect = true;
+                            nes.AutoReconnect = true;
                             Console.WriteLine("Started shell server on port {0}.", nes.ShellPort);
                             Console.WriteLine("Connect to it using terminal client (raw mode, no local echo).");
                             Console.WriteLine("Press ENTER to stop.");
@@ -93,6 +97,36 @@ namespace UsbTest
                             result = nes.Execute(args[1], stdin, stdout, stderr);
                             Console.Error.WriteLine("Done in {0}ms. Exit code: {1}", (int)(DateTime.Now - s).TotalMilliseconds, result);
                             break;
+                        case "pull":
+                            if (args.Length < 2)
+                            {
+                                ShowHelp();
+                                Environment.Exit(-1);
+                            }
+                            source = args[1];
+                            if (args.Length >= 3)
+                                target = args[2];
+                            else
+                            {
+                                target = source;
+                                int pos;
+                                while ((pos = target.IndexOf("/")) >= 0)
+                                    target = target.Substring(pos + 1);
+                            }
+                            source = source.Replace("'", "\\'");
+                            result = nes.Execute("cat '" + source + "'", null, new FileStream(target, FileMode.Create), Console.OpenStandardError());
+                            break;
+                        case "push":
+                            if (args.Length < 3)
+                            {
+                                ShowHelp();
+                                Environment.Exit(-1);
+                            }
+                            source = args[1];
+                            target = args[2];
+                            target=target.Replace("'", "\\'");
+                            result = nes.Execute("cat > '" + target + "'", new FileStream(source, FileMode.Open), Console.OpenStandardOutput(), Console.OpenStandardError());
+                            break;
                         default:
                             ShowHelp();
                             Environment.Exit(-1);
@@ -113,8 +147,27 @@ namespace UsbTest
 
         static void ShowHelp()
         {
-            Console.WriteLine("clovershell client v{0} (c) cluster, 2017", Assembly.GetExecutingAssembly().GetName().Version);
-            Console.WriteLine("Usage: {0} shell\r\nUsage: {0} exec <command> [stdin [stdout [stderr]]]", Path.GetFileName(Assembly.GetExecutingAssembly().CodeBase));
+            Console.WriteLine("clovershell client v{0} (c) Alexey 'Cluster' Avdyukhin, 2017", Assembly.GetExecutingAssembly().GetName().Version);
+            Console.WriteLine(
+                   "Usage: {0} shell [port]\r\n"+
+                   "Usage: {0} exec <command> [stdin [stdout [stderr]]]\r\n"+
+                   "Usage: {0} pull <remote_file> [local_file]\r\n"+
+                   "Usage: {0} push <local_file> <remote_file>\r\n"
+                   , Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().CodeBase));
+            Console.WriteLine("Examples:");
+            Console.WriteLine(
+                   "Start shell server on port 23:\r\n {0} shell 23\r\n" +
+                   "List files:\r\n {0} exec \"ls /etc/\"\r\n" +
+                   "Download file:\r\n {0} pull /etc/inittab inittab\r\n" +
+                   "Upload file:\r\n {0} push inittab /etc/inittab\r\n" +
+                   "Archive and download files:\r\n {0} exec \"cd /etc && tar -czv *\" > file.tar.gz\r\n" +
+                   "Archive and download files (alternative):\r\n {0} exec \"cd /etc && tar -czv *\" null file.tar.gz\r\n" +
+                   "Upload and extract files:\r\n {0} exec \"cd /etc && tar -xzv\" file.tar.gz\r\n" +
+                   "Upload and extract files (alternative):\r\n {0} exec \"cd /etc && tar -xzv\" - <file.tar.gz\r\n" +
+                   "Dump the whole decrypted filesystem:\r\n {0} exec \"dd if=/dev/mapper/root-crypt | gzip\" > dump.img.gz\r\n" +
+                   "Dump the whole decrypted filesystem (alternative):\r\n {0} exec \"dd if=/dev/mapper/root-crypt | gzip\" null dump.img.gz\r\n"
+                   , Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().CodeBase));
+
         }
     }
 }
