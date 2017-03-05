@@ -139,6 +139,9 @@ namespace com.clusterrr.cloverhack
                 foreach (var pending in pendingShellConnections)
                     pending.socket.Close();
                 pendingShellConnections.Clear();
+                foreach (var connection in shellConnecionThreads)
+                    connection.Abort();
+                shellConnecionThreads.Clear();
                 shellEnabled = value;
             }
         }
@@ -286,6 +289,9 @@ namespace com.clusterrr.cloverhack
                     }
                     if (online) Debug.WriteLine("clovershell disconnected");
                     online = false;
+                    foreach (var connection in shellConnecionThreads)
+                        connection.Abort();
+                    shellConnecionThreads.Clear(); 
                     if (device != null)
                         device.Close();
                     device = null;
