@@ -32,14 +32,7 @@ namespace UsbTest
                         Environment.Exit(-1);
                     }
                     var command = args[0].ToLower();
-                    nes.Enabled = true;
-                    int t = 300;
-                    while (!nes.Online)
-                    {
-                        Thread.Sleep(10);
-                        t--;
-                        if (t == 0) throw new Exception("no clovershell connection, make sure your NES Mini connected, turned on and clovershell mod installed");
-                    }
+                    nes.Connect();
                     var ping = nes.Ping();
                     if (ping < 0) throw new Exception("connected to NES Mini but clovershell is not responding");
                     switch (command)

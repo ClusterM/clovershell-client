@@ -315,6 +315,17 @@ namespace com.clusterrr.cloverhack
             }
         }
 
+        public void Connect()
+        {
+            if (Enabled) return;
+            Enabled = true;
+            while (Enabled && !online)
+            {
+                Thread.Sleep(50);
+            }
+            if (!online) throw new Exception("no clovershell connection, make sure your NES Mini connected, turned on and clovershell mod installed");
+        }
+
         void epReader_DataReceived(object sender, EndpointDataEventArgs e)
         {
             var cmd = (ClovershellCommand)e.Buffer[0];
