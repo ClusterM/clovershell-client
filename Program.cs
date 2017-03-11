@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using com.clusterrr.clovershell;
+using com.clusterrr.util;
 
 namespace com.clusterrr.clovershell
 {
@@ -19,6 +20,7 @@ namespace com.clusterrr.clovershell
             string source;
             string target;
             int result = -1;
+            int top, left;
 #if DEBUG
             Debug.Listeners.Add(new TextWriterTraceListener(System.Console.Error));
 #endif
@@ -107,7 +109,22 @@ namespace com.clusterrr.clovershell
                                     target = target.Substring(pos + 1);
                             }
                             source = source.Replace("'", "\\'");
-                            result = nes.Execute("cat '" + source + "'", null, new FileStream(target, FileMode.Create), Console.OpenStandardError());
+                            var sizeMS = new MemoryStream();
+                            nes.Execute(string.Format("stat -c %s \"{0}\"", source), null, sizeMS, null, 1000, true);
+                            sizeMS.Seek(0, SeekOrigin.Begin);
+                            var size = int.Parse(new StreamReader(sizeMS).ReadToEnd());
+                            Console.Write("Reading {0}... ", source);
+                            top = Console.CursorTop;
+                            left = Console.CursorLeft;
+                            var outFile = new TrackableFileStream(target, FileMode.Create);
+                            outFile.OnProgress += delegate(long Position, long Length)
+                            {
+                                Console.CursorTop = top;
+                                Console.CursorLeft = left;
+                                Console.Write("{0} / {1} ({2}%) ", Position, size > 0 ? size.ToString() : "???", size > 0 ? (Position * 100 / size).ToString() : "???");
+                            };
+                            result = nes.Execute("cat '" + source + "'", null, outFile, Console.OpenStandardError(), 1000, true);
+                            Console.Write("Done.");
                             break;
                         case "push":
                             if (args.Length < 3)
@@ -117,8 +134,18 @@ namespace com.clusterrr.clovershell
                             }
                             source = args[1];
                             target = args[2];
-                            target=target.Replace("'", "\\'");
-                            result = nes.Execute("cat > '" + target + "'", new FileStream(source, FileMode.Open), Console.OpenStandardOutput(), Console.OpenStandardError());
+                            target = target.Replace("'", "\\'");
+                            top = Console.CursorTop;
+                            left = Console.CursorLeft;
+                            var inFile = new TrackableFileStream(source, FileMode.Open);
+                            inFile.OnProgress += delegate(long Position, long Length)
+                            {
+                                Console.CursorTop = top;
+                                Console.CursorLeft = left;
+                                Console.Write("{0} / {1} ({2}%) ", Position, Length, Position * 100 / Length);
+                            };
+                            result = nes.Execute("cat > '" + target + "'", inFile, Console.OpenStandardOutput(), Console.OpenStandardError(), 1000, true);
+                            Console.Write("Done.");
                             break;
                         default:
                             ShowHelp();
@@ -142,9 +169,9 @@ namespace com.clusterrr.clovershell
         {
             Console.WriteLine("clovershell client v{0} (c) Alexey 'Cluster' Avdyukhin, 2017", Assembly.GetExecutingAssembly().GetName().Version);
             Console.WriteLine(
-                   "Usage: {0} shell [port]\r\n"+
-                   "Usage: {0} exec <command> [stdin [stdout [stderr]]]\r\n"+
-                   "Usage: {0} pull <remote_file> [local_file]\r\n"+
+                   "Usage: {0} shell [port]\r\n" +
+                   "Usage: {0} exec <command> [stdin [stdout [stderr]]]\r\n" +
+                   "Usage: {0} pull <remote_file> [local_file]\r\n" +
                    "Usage: {0} push <local_file> <remote_file>\r\n"
                    , Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().CodeBase));
             Console.WriteLine("Examples:");

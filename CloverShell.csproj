@@ -197,6 +197,7 @@
     <Compile Include="LibWinUsb\WinUsb\WinUsbRegistry.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="TrackableFileStream.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="LibWinUsb\LibUsbDotNet.csproj" />

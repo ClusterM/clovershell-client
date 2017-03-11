@@ -595,16 +595,13 @@ namespace com.clusterrr.clovershell
                         if (timeout > 0 && IdleTime.TotalMilliseconds > timeout)
                             throw new Exception("clovershell read timeout");
                     }
-
                     if (throwOnNonZero && c.result != 0)
                     {
                         string errText = "";
                         if (stderr is MemoryStream)
                         {
                             stderr.Seek(0, SeekOrigin.Begin);
-                            var buff = new byte[stderr.Length];
-                            stderr.Read(buff, 0, buff.Length);
-                            errText = ": " + Encoding.UTF8.GetString(buff);
+                            errText = ": " + new StreamReader(stderr).ReadToEnd();
                         }
                         throw new Exception(string.Format("shell command \"{0}\" returned exit code {1}{2}", command, c.result, errText));
                     }
