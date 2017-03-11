@@ -44,7 +44,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ClovershellConnection.cs" />
+    <Compile Include="CloverShell\ClovershellConnection.cs" />
+    <Compile Include="CloverShell\ExecConnection.cs" />
+    <Compile Include="CloverShell\ShellConnection.cs" />
     <Compile Include="LibWinUsb\Descriptors\ClassCodeType.cs" />
     <Compile Include="LibWinUsb\Descriptors\DescriptorType.cs" />
     <Compile Include="LibWinUsb\Descriptors\LangStringDescriptor.cs" />

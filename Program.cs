@@ -6,11 +6,11 @@ using System.Net;
 using System.Threading;
 using System.Net.Sockets;
 using System.Diagnostics;
-using com.clusterrr.cloverhack;
 using System.IO;
 using System.Reflection;
+using com.clusterrr.clovershell;
 
-namespace UsbTest
+namespace com.clusterrr.clovershell
 {
     class Program
     {
