@@ -16,34 +16,88 @@ namespace com.clusterrr.cloverhack
     {
         class ShellConnection
         {
+            public readonly ClovershellConnection connection;
             public Socket socket;
             public int id;
-            public ShellConnection()
+            public ShellConnection(ClovershellConnection connection)
             {
+                this.connection = connection;
                 id = -1;
             }
         }
         class ExecConnection
         {
+            public readonly ClovershellConnection connection;
             public readonly string command;
             public Stream stdin;
+            public Int32 stdinPipeSize;
+            public Int32 stdinQueue;
             public Stream stdout;
             public Stream stderr;
             public int id;
             public bool finished;
+            public bool stdinFinished;
             public bool stdoutFinished;
             public bool stderrFinished;
             public int result;
-            public ExecConnection(string command, Stream stdin, Stream stdout, Stream stderr)
+            public Thread stdinThread;
+
+            public ExecConnection(ClovershellConnection connection, string command, Stream stdin, Stream stdout, Stream stderr)
             {
+                this.connection = connection;
                 this.command = command;
                 id = -1;
+                stdinPipeSize = 0;
+                stdinQueue = 0;
                 this.stdin = stdin;
                 this.stdout = stdout;
                 this.stderr = stderr;
                 finished = false;
+                stdinFinished = false;
                 stdoutFinished = false;
                 stderrFinished = false;
+            }
+
+            public void stdinLoop()
+            {
+                try
+                {
+                    if (stdin == null) return;
+                    if (stdin.CanSeek)
+                        stdin.Seek(0, SeekOrigin.Begin);
+                    var buffer = new byte[8 * 1024];
+                    int l;
+                    while (connection.Online)
+                    {
+                        l = stdin.Read(buffer, 0, buffer.Length);
+                        if (l > 0)
+                            connection.writeUsb(ClovershellCommand.CMD_EXEC_STDIN, (byte)id, buffer, l);
+                        else
+                            break;
+                        if (stdinQueue > 32 * 1024 && connection.Online)
+                        {
+                            Debug.WriteLine(string.Format("queue: {0} / {1}, {2}MB / {3}MB ({4}%)",
+                                stdinQueue, stdinPipeSize, stdin.Position / 1024/1024, stdin.Length / 1024/1024, 100 * stdin.Position / stdin.Length));
+                            while (stdinQueue > 16 * 1024)
+                            {
+                                Thread.Sleep(50);
+                                connection.writeUsb(ClovershellCommand.CMD_EXEC_STDIN_FLOW_STAT_REQ, (byte)id);
+                            }
+                        }
+                    }
+                    connection.writeUsb(ClovershellCommand.CMD_EXEC_STDIN, (byte)id); // eof
+                    if (stdinQueue > 0 && connection.Online)
+                    {
+                        Thread.Sleep(50);
+                        connection.writeUsb(ClovershellCommand.CMD_EXEC_STDIN_FLOW_STAT_REQ, (byte)id);
+                    }
+                    stdinFinished = true;
+                }
+                catch (ThreadAbortException) { }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("stdin: " + ex.Message + ex.StackTrace);
+                }
             }
         }
 
@@ -169,7 +223,9 @@ namespace com.clusterrr.cloverhack
             CMD_EXEC_STDERR = 14,
             CMD_EXEC_RESULT = 15,
             CMD_EXEC_KILL = 16,
-            CMD_EXEC_KILL_ALL = 17
+            CMD_EXEC_KILL_ALL = 17,
+            CMD_EXEC_STDIN_FLOW_STAT = 18,
+            CMD_EXEC_STDIN_FLOW_STAT_REQ = 19
         }
 
         void dropAll()
@@ -291,7 +347,7 @@ namespace com.clusterrr.cloverhack
                     online = false;
                     foreach (var connection in shellConnecionThreads)
                         connection.Abort();
-                    shellConnecionThreads.Clear(); 
+                    shellConnecionThreads.Clear();
                     if (device != null)
                         device.Close();
                     device = null;
@@ -338,7 +394,7 @@ namespace com.clusterrr.cloverhack
         {
             if (len < 0)
                 len = data.Length;
-            Debug.WriteLine(string.Format("cmd={0}, arg={1:X2}, len={2}", cmd, arg, len));
+            //Debug.WriteLine(string.Format("cmd={0}, arg={1:X2}, len={2}", cmd, arg, len));
             lastAliveTime = DateTime.Now;
             switch (cmd)
             {
@@ -366,6 +422,9 @@ namespace com.clusterrr.cloverhack
                     break;
                 case ClovershellCommand.CMD_EXEC_RESULT:
                     execResult(arg, data, pos, len);
+                    break;
+                case ClovershellCommand.CMD_EXEC_STDIN_FLOW_STAT:
+                    execStdinStat(arg, data, pos, len);
                     break;
             }
         }
@@ -402,8 +461,22 @@ namespace com.clusterrr.cloverhack
             if (data != null)
                 Array.Copy(data, 0, buff, 4, len);
             int tLen = 0;
-            epWriter.Write(buff, 0, 4 + len, 1000, out tLen);
-            if (tLen != 4 + len)
+            int pos = 0;
+            len += 4;
+            int repeats = 0;
+            while (pos < len)
+            {
+                var res = epWriter.Write(buff, pos, len, 1000, out tLen);
+                pos += tLen;
+                len -= tLen;
+                if (res != ErrorCode.Ok)
+                {
+                    if (repeats >= 3) break;
+                    repeats++;
+                    Thread.Sleep(100);
+                }
+            }
+            if (len > 0)
                 throw new Exception("write error");
         }
 
@@ -414,7 +487,7 @@ namespace com.clusterrr.cloverhack
                 var server = o as TcpListener;
                 while (true)
                 {
-                    var connection = new ShellConnection();
+                    var connection = new ShellConnection(this);
                     while (!server.Pending()) Thread.Sleep(100);
                     connection.socket = server.AcceptSocket();
                     Debug.WriteLine("Shell client connected");
@@ -437,7 +510,7 @@ namespace com.clusterrr.cloverhack
                     }
                     catch (Exception ex)
                     {
-                        connection.socket.Send(Encoding.ASCII.GetBytes("Error: " + ex.Message));
+                        connection.socket.Send(Encoding.UTF8.GetBytes("Error: " + ex.Message));
                         Thread.Sleep(3000);
                         connection.socket.Close();
                     }
@@ -479,21 +552,15 @@ namespace com.clusterrr.cloverhack
             {
                 var connection = (from c in pendingExecConnections where c.command == command select c).First();
                 pendingExecConnections.Remove(connection);
+#if DEBUG
+                Debug.WriteLine("Executing: " + command);
+#endif
                 connection.id = arg;
                 execConnections[arg] = connection;
                 if (connection.stdin != null)
                 {
-                    if (connection.stdin.CanSeek)
-                        connection.stdin.Seek(0, SeekOrigin.Begin);
-                    var buffer = new byte[8 * 1024];
-                    int l;
-                    do
-                    {
-                        l = connection.stdin.Read(buffer, 0, buffer.Length);
-                        if (l > 0)
-                            writeUsb(ClovershellCommand.CMD_EXEC_STDIN, (byte)connection.id, buffer, l);
-                    } while (l > 0);
-                    writeUsb(ClovershellCommand.CMD_EXEC_STDIN, (byte)connection.id); // eof
+                    connection.stdinThread = new Thread(connection.stdinLoop);
+                    connection.stdinThread.Start();
                 }
             }
             catch (Exception ex)
@@ -508,6 +575,9 @@ namespace com.clusterrr.cloverhack
             if (c == null) return;
             if (c.stdout != null)
                 c.stdout.Write(data, pos, len);
+#if DEBUG
+            //Debug.WriteLine("stdout: " + Encoding.UTF8.GetString(data, pos, len));
+#endif
             if (len == 0)
                 c.stdoutFinished = true;
         }
@@ -518,6 +588,9 @@ namespace com.clusterrr.cloverhack
             if (c == null) return;
             if (c.stderr != null)
                 c.stderr.Write(data, pos, len);
+#if DEBUG
+            //Debug.WriteLine("stderr: " + Encoding.UTF8.GetString(data, pos, len));
+#endif
             if (len == 0)
                 c.stderrFinished = true;
         }
@@ -527,7 +600,16 @@ namespace com.clusterrr.cloverhack
             var c = execConnections[arg];
             if (c == null) return;
             c.result = data[pos];
+            Debug.WriteLine(string.Format("{0} # exit code: {1}", c.command, c.result));
             c.finished = true;
+        }
+
+        void execStdinStat(byte arg, byte[] data, int pos, int len)
+        {
+            var c = execConnections[arg];
+            if (c == null) return;
+            c.stdinQueue = data[pos] | data[pos + 1] * 0x100 | data[pos + 2] * 0x10000 | data[pos + 3] * 0x1000000;
+            c.stdinPipeSize = data[pos + 4] | data[pos + 5] * 0x100 | data[pos + 6] * 0x10000 | data[pos + 7] * 0x1000000;
         }
 
         void listenShellConnection(object o)
@@ -604,12 +686,14 @@ namespace com.clusterrr.cloverhack
             return (int)(DateTime.Now - start).TotalMilliseconds;
         }
 
-        public int Execute(string command, Stream stdin, Stream stdout, Stream stderr, int timeout = 0)
+        public int Execute(string command, Stream stdin = null, Stream stdout = null, Stream stderr = null, int timeout = 0, bool throwOnNonZero = false)
         {
-            var c = new ExecConnection(command, stdin, stdout, stderr);
+            if (throwOnNonZero && stderr == null)
+                stderr = new MemoryStream();
+            var c = new ExecConnection(this, command, stdin, stdout, stderr);
             pendingExecConnections.Add(c);
             writeUsb(ClovershellCommand.CMD_EXEC_NEW_REQ, 0, Encoding.UTF8.GetBytes(command));
-            while (!c.finished || !c.stdoutFinished || !c.stderrFinished)
+            while (!c.finished)
             {
                 Thread.Sleep(50);
                 if (!Online)
@@ -618,6 +702,18 @@ namespace com.clusterrr.cloverhack
                     throw new Exception("clovershell read timeout");
             }
             execConnections[c.id] = null;
+            if (throwOnNonZero && c.result != 0)
+            {
+                string errText = "";
+                if (stderr is MemoryStream)
+                {
+                    stderr.Seek(0, SeekOrigin.Begin);
+                    var buff = new byte[stderr.Length];
+                    stderr.Read(buff, 0, buff.Length);
+                    errText = ": " + Encoding.UTF8.GetString(buff);
+                }
+                throw new Exception(string.Format("Shell command \"{0}\" returned exit code {1}{2}", command, c.result, errText));
+            }
             return c.result;
         }
     }
