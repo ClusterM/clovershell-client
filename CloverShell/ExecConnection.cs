@@ -24,6 +24,7 @@ namespace com.clusterrr.clovershell
         internal bool stdoutFinished;
         internal bool stderrFinished;
         internal Thread stdinThread;
+        internal DateTime LastDataTime;
 
         public ExecConnection(ClovershellConnection connection, string command, Stream stdin, Stream stdout, Stream stderr)
         {
@@ -39,6 +40,7 @@ namespace com.clusterrr.clovershell
             stdinFinished = false;
             stdoutFinished = false;
             stderrFinished = false;
+            LastDataTime = DateTime.Now;
         }
 
         public void stdinLoop()
@@ -57,6 +59,7 @@ namespace com.clusterrr.clovershell
                         connection.writeUsb(ClovershellConnection.ClovershellCommand.CMD_EXEC_STDIN, (byte)id, buffer, l);
                     else
                         break;
+                    LastDataTime = DateTime.Now;
                     if (stdinQueue > 32 * 1024 && connection.IsOnline)
                     {
                         Debug.WriteLine(string.Format("queue: {0} / {1}, {2}MB / {3}MB ({4}%)",
@@ -77,7 +80,7 @@ namespace com.clusterrr.clovershell
                 stdinFinished = true;
             }
             catch (ThreadAbortException) { }
-            catch (Exception ex)
+            catch (ClovershellException ex)
             {
                 Debug.WriteLine("stdin error: " + ex.Message + ex.StackTrace);
             }

@@ -39,7 +39,7 @@ namespace com.clusterrr.clovershell
             catch (ThreadAbortException)
             {
             }
-            catch (Exception)
+            catch (ClovershellException)
             {
             }
             finally

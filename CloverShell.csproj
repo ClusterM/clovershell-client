@@ -45,6 +45,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CloverShell\ClovershellConnection.cs" />
+    <Compile Include="CloverShell\ClovershellException.cs" />
     <Compile Include="CloverShell\ExecConnection.cs" />
     <Compile Include="CloverShell\ShellConnection.cs" />
     <Compile Include="LibWinUsb\Descriptors\ClassCodeType.cs" />

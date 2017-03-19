@@ -124,7 +124,7 @@ namespace com.clusterrr.clovershell
                                 Console.Write("{0} / {1} ({2}%) ", Position, size > 0 ? size.ToString() : "???", size > 0 ? (Position * 100 / size).ToString() : "???");
                             };
                             result = nes.Execute("cat '" + source + "'", null, outFile, Console.OpenStandardError(), 1000, true);
-                            Console.Write("Done.");
+                            Console.WriteLine("Done.");
                             break;
                         case "push":
                             if (args.Length < 3)
@@ -145,7 +145,7 @@ namespace com.clusterrr.clovershell
                                 Console.Write("{0} / {1} ({2}%) ", Position, Length, Position * 100 / Length);
                             };
                             result = nes.Execute("cat > '" + target + "'", inFile, Console.OpenStandardOutput(), Console.OpenStandardError(), 1000, true);
-                            Console.Write("Done.");
+                            Console.WriteLine("Done.");
                             break;
                         default:
                             ShowHelp();
