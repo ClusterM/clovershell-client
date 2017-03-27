@@ -33,6 +33,9 @@ namespace com.clusterrr.clovershell
                         ShowHelp();
                         Environment.Exit(-1);
                     }
+
+                    if (Process.GetProcessesByName("hakchi").Count() > 0) throw new Exception("Please close hakchi2 first");
+
                     var command = args[0].ToLower();
                     nes.Connect();
                     var ping = nes.Ping();
