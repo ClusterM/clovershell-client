@@ -44,8 +44,8 @@ namespace com.clusterrr.clovershell
                                 nes.ShellPort = ushort.Parse(args[1]);
                             nes.ShellEnabled = true;
                             nes.AutoReconnect = true;
-                            Console.WriteLine("Started shell server on port {0}.", nes.ShellPort);
-                            Console.WriteLine("Connect to it using terminal client (raw mode, no local echo).");
+                            Console.WriteLine("Started shell server on telnet://127.0.0.1:{0}.", nes.ShellPort);
+                            Console.WriteLine("Connect to it using telnet client.");
                             Console.WriteLine("Press ENTER to stop.");
                             Console.ReadLine();
                             result = 0;
@@ -90,7 +90,7 @@ namespace com.clusterrr.clovershell
                             else stderr = Console.OpenStandardError();
                             var s = DateTime.Now;
                             result = nes.Execute(args[1], stdin, stdout, stderr);
-                            Console.Error.WriteLine("Done in {0}ms. Exit code: {1}", (int)(DateTime.Now - s).TotalMilliseconds, result);
+                            //Console.Error.WriteLine("Done in {0}ms. Exit code: {1}", (int)(DateTime.Now - s).TotalMilliseconds, result);
                             break;
                         case "pull":
                             if (args.Length < 2)
