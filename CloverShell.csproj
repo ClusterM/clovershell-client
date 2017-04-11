@@ -48,6 +48,15 @@
     <Compile Include="CloverShell\ClovershellException.cs" />
     <Compile Include="CloverShell\ExecConnection.cs" />
     <Compile Include="CloverShell\ShellConnection.cs" />
+    <Compile Include="FtpServer\DebugLogHandler.cs" />
+    <Compile Include="FtpServer\FileSystemHelper.cs" />
+    <Compile Include="FtpServer\IAuthHandler.cs" />
+    <Compile Include="FtpServer\IFileSystemHandler.cs" />
+    <Compile Include="FtpServer\ILogHandler.cs" />
+    <Compile Include="FtpServer\NesMiniAuthHandler.cs" />
+    <Compile Include="FtpServer\NesMiniFileSystemHandler.cs" />
+    <Compile Include="FtpServer\Server.cs" />
+    <Compile Include="FtpServer\Session.cs" />
     <Compile Include="LibWinUsb\Descriptors\ClassCodeType.cs" />
     <Compile Include="LibWinUsb\Descriptors\DescriptorType.cs" />
     <Compile Include="LibWinUsb\Descriptors\LangStringDescriptor.cs" />

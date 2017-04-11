@@ -21,6 +21,8 @@ namespace com.clusterrr.clovershell
             string target;
             int result = -1;
             int top, left;
+            Thread ftpThread;
+            mooftpserv.Server ftpServer;
 #if DEBUG
             Debug.Listeners.Add(new TextWriterTraceListener(System.Console.Error));
 #endif
@@ -30,8 +32,9 @@ namespace com.clusterrr.clovershell
                 {
                     if (args.Length == 0)
                     {
-                        ShowHelp();
-                        Environment.Exit(-1);
+                        //ShowHelp();
+                        //Environment.Exit(-1);
+                        args = new string[] { "all" };
                     }
 
                     if (Process.GetProcessesByName("hakchi").Count() > 0) throw new Exception("Please close hakchi2 first");
@@ -47,10 +50,85 @@ namespace com.clusterrr.clovershell
                                 nes.ShellPort = ushort.Parse(args[1]);
                             nes.ShellEnabled = true;
                             nes.AutoReconnect = true;
-                            Console.WriteLine("Started shell server on telnet://127.0.0.1:{0}.", nes.ShellPort);
+                            Console.WriteLine("Started Telnet server on telnet://127.0.0.1:{0}", nes.ShellPort);
                             Console.WriteLine("Connect to it using telnet client.");
                             Console.WriteLine("Press ENTER to stop.");
                             Console.ReadLine();
+                            result = 0;
+                            break;
+                        case "ftp":
+                            nes.AutoReconnect = true;
+                            ftpServer = new mooftpserv.Server();
+                            ftpServer.AuthHandler = new mooftpserv.NesMiniAuthHandler();
+                            ftpServer.FileSystemHandler = new mooftpserv.NesMiniFileSystemHandler(nes);
+                            ftpServer.LogHandler = new mooftpserv.DebugLogHandler();
+                            if (args.Length >= 2)
+                                ftpServer.LocalPort = ushort.Parse(args[1]);
+                            else
+                                ftpServer.LocalPort = 1021;
+                            ftpThread = new Thread(delegate()
+                            {
+                                try
+                                {
+                                    ftpServer.Run();
+                                }
+                                catch (ThreadAbortException) { }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("Error: " + ex.Message);
+                                }
+                            });
+                            ftpThread.Start();
+                            Thread.Sleep(500);
+                            if (ftpThread.ThreadState != System.Threading.ThreadState.Running)
+                            {
+                                result = 1;
+                                break;
+                            }
+                            Console.WriteLine("Started FTP server on ftp://root:clover@127.0.0.1:{0}", ftpServer.LocalPort);
+                            Console.WriteLine("Connect to it using FTP client.");
+                            Console.WriteLine("Press ENTER to stop.");
+                            Console.ReadLine();
+                            ftpServer.Stop();
+                            result = 0;
+                            break;
+                        case "all":
+                            if (args.Length >= 2)
+                                nes.ShellPort = ushort.Parse(args[1]);
+                            nes.ShellEnabled = true;
+                            nes.AutoReconnect = true;
+                            Console.WriteLine("Started Telnet server on telnet://127.0.0.1:{0}", nes.ShellPort);
+                            ftpServer = new mooftpserv.Server();
+                            ftpServer.AuthHandler = new mooftpserv.NesMiniAuthHandler();
+                            ftpServer.FileSystemHandler = new mooftpserv.NesMiniFileSystemHandler(nes);
+                            ftpServer.LogHandler = new mooftpserv.DebugLogHandler();
+                            if (args.Length >= 3)
+                                ftpServer.LocalPort = ushort.Parse(args[2]);
+                            else
+                                ftpServer.LocalPort = 1021;
+                            ftpThread = new Thread(delegate()
+                            {
+                                try
+                                {
+                                    ftpServer.Run();
+                                }
+                                catch (ThreadAbortException) { }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("Error: " + ex.Message);
+                                }
+                            });
+                            ftpThread.Start();
+                            Thread.Sleep(500);
+                            if (ftpThread.ThreadState != System.Threading.ThreadState.Running)
+                            {
+                                result = 1;
+                                break;
+                            }
+                            Console.WriteLine("Started FTP server on ftp://root:clover@127.0.0.1:{0}", ftpServer.LocalPort);
+                            Console.WriteLine("Press ENTER to stop.");
+                            Console.ReadLine();
+                            ftpServer.Stop();
                             result = 0;
                             break;
                         case "exec":
@@ -173,13 +251,16 @@ namespace com.clusterrr.clovershell
             Console.WriteLine("clovershell client v{0} (c) Alexey 'Cluster' Avdyukhin, 2017", Assembly.GetExecutingAssembly().GetName().Version);
             Console.WriteLine(
                    "Usage: {0} shell [port]\r\n" +
+                   "Usage: {0} ftp [port]\r\n" +
+                   "Usage: {0} all [shell_port [ftp_port]] (default)\r\n" +
                    "Usage: {0} exec <command> [stdin [stdout [stderr]]]\r\n" +
                    "Usage: {0} pull <remote_file> [local_file]\r\n" +
                    "Usage: {0} push <local_file> <remote_file>\r\n"
                    , Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().CodeBase));
             Console.WriteLine("Examples:");
             Console.WriteLine(
-                   "Start shell server on port 23:\r\n {0} shell 23\r\n" +
+                   "Start Telnet server on port 23:\r\n {0} shell 23\r\n" +
+                   "Start FTP server on port 21:\r\n {0} ftp 21\r\n" +
                    "List files:\r\n {0} exec \"ls /etc/\"\r\n" +
                    "Download file:\r\n {0} pull /etc/inittab inittab\r\n" +
                    "Upload file:\r\n {0} push inittab /etc/inittab\r\n" +
