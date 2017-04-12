@@ -4,7 +4,8 @@ Client for hakchi mod (https://github.com/ClusterM/clovershell-daemon) which all
 ## Usage ##
 
     clovershell shell [port]
-    clovershell exec <command> [stdin [stdout [stderr]]]
+    clovershell ftp [port]
+    clovershell all [shell_port [ftp_port]] (default)    clovershell exec <command> [stdin [stdout [stderr]]]
     clovershell pull <remote_file> [local_file]
     clovershell push <local_file> <remote_file>
 
@@ -12,6 +13,8 @@ Client for hakchi mod (https://github.com/ClusterM/clovershell-daemon) which all
 
     Start shell server on port 23:
      clovershell shell 23
+    Start FTP server on port 21:
+     clovershell ftp 21
     List files:
      clovershell exec "ls /etc/"
     Download file:
